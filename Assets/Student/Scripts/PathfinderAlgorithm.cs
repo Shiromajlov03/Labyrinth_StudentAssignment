@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.Assertions.Must;
-using UnityEngine.Rendering;
 
 public static class PathfindingAlgorithm
 {
@@ -41,14 +38,14 @@ public static class PathfindingAlgorithm
         if (start == goal)
             return new List<Vector2Int> { start };
 
-        Queue<Vector2Int> queue = new Queue<Vector2Int>();
+        // Priotiry Queue
+        var priorityQueue = new List<(Vector2Int pos, float cost)>();
+        priorityQueue.Add((start, 0f));
 
-        HashSet<Vector2Int> visited = new HashSet<Vector2Int>();
-
-        Dictionary<Vector2Int, Vector2Int> previous = new Dictionary<Vector2Int, Vector2Int>();
-
-        queue.Enqueue(start);
-        visited.Add(start);
+        // Distance and previous node tracking
+        var costSoFar = new Dictionary<Vector2Int, float>();
+        var previous = new Dictionary<Vector2Int, Vector2Int>();
+        costSoFar[start] = 0f;
 
         Vector2Int[] directions = new Vector2Int[]
         {
@@ -58,15 +55,19 @@ public static class PathfindingAlgorithm
             Vector2Int.right,
         };
 
-        while (queue.Count > 0) { 
-        
-            Vector2Int current = queue.Dequeue();
+        while (priorityQueue.Count > 0) 
+        {
+            // Sort to get the node with the lowest total movement cost
+            priorityQueue.Sort((a, b) => a.cost.CompareTo(b.cost));
+            var current = priorityQueue[0].pos;
+            priorityQueue.RemoveAt(0);
+
             if(current == goal)
             {
                 return ReconstructPath(previous, start, goal);
             }
 
-            foreach(Vector2Int direction in directions)
+            foreach(var direction in directions)
             {
                 Vector2Int neighbor = current + direction;
 
@@ -75,22 +76,35 @@ public static class PathfindingAlgorithm
                 neighbor.y < 0 || neighbor.y >= mapData.Height)
                     continue;
 
-                //skip if already visited
-                if (visited.Contains(neighbor)) { 
-                continue;
-                }
-                
-                //skip if blocked
-                if(IsMovementBlocked(current, neighbor, mapData))
-                {
+                // Get movement cost
+                float moveCost = GetMovementCost(current, neighbor, mapData);
+                if (float.IsInfinity(moveCost))
                     continue;
+
+                float newCost = costSoFar[current] + moveCost;
+
+                if (!costSoFar.ContainsKey(neighbor) || newCost < costSoFar[neighbor])
+                {
+                    costSoFar[neighbor] = newCost;
+                    previous[neighbor] = current;
+                    priorityQueue.Add((neighbor, newCost));
                 }
+            }
 
-                //valid neighbor add to exploration
-                visited.Add(neighbor);
-                previous[neighbor] = current;
-                queue.Enqueue(neighbor);
-
+            // Handle vent movement
+            if (mapData.HasVent(current.x, current.y))
+            {
+                float ventCost = mapData.GetVentCost(current.x, current.y);
+                foreach(var otherVent in mapData.GetOtherVentPositions(current))
+                {
+                    float newCost = costSoFar[current] + ventCost;
+                    if (!costSoFar.ContainsKey(otherVent) || newCost < costSoFar[otherVent])
+                    {
+                        costSoFar[otherVent] = newCost;
+                        previous[otherVent] = current;
+                        priorityQueue.Add((otherVent, newCost));
+                    }
+                }
             }
         }
         
@@ -117,19 +131,33 @@ public static class PathfindingAlgorithm
         return path;
     }
 
+    public static float GetMovementCost(Vector2Int from, Vector2Int to, IMapData mapData)
+    {
+        float baseCost = 1f;
+
+        // Determine wall blocking and cost
+        if (from.x == to.x)
+        {
+            int checkY = Mathf.Max(from.y, to.y);
+            float wallCost = mapData.GetHorizontalWallCost(from.x, checkY);
+            if (float.IsInfinity(wallCost))
+                return float.PositiveInfinity;
+            baseCost += wallCost - 1f;
+        }
+        else
+        {
+            int checkX = Mathf.Max(from.x, to.x);
+            float wallCost = mapData.GetVerticalWallCost(checkX, from.y);
+            if (float.IsInfinity(wallCost))
+                return float.PositiveInfinity;
+            baseCost += wallCost - 1f;
+        }
+
+        return baseCost;
+    }
+
     public static bool IsMovementBlocked(Vector2Int from, Vector2Int to, IMapData mapData)
-{
-    if (from.x == to.x)
     {
-        
-        int checkY = Mathf.Max(from.y, to.y);
-        return mapData.HasHorizontalWall(from.x, checkY);
+        return float.IsInfinity(GetMovementCost(from, to, mapData));
     }
-    else
-    {
-        
-        int checkX = Mathf.Max(from.x, to.x);
-        return mapData.HasVerticalWall(checkX, from.y);
-    }
-}
 }
