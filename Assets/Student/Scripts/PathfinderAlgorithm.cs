@@ -182,4 +182,17 @@ public static class PathfindingAlgorithm
     {
         return float.IsInfinity(GetMovementCost(from, to, mapData));
     }
+
+    /// <time complexity calculation>
+    /// definition off indata
+    /// V = amount off nodes in the labyrinth because the labyrinth is a grid with width and height a node = V = Width * Height
+    /// E = amount off edges between nodes. Each node can have up to 4 edges to other nodes (up, down, left, right), so in a grid without walls we have aproximately E =< 4V
+    /// walls reduce the number of edges while vents can increase it. if there are k vents, they can contribute up to O(k^2) additional edges between vents
+    /// therefore the time complexity becomes
+    /// Each node is removed from the priority queue at most once, and for each node its edges are examined.
+    ///The number of neighbor operations is proportional to the number of edges 
+    ///Thus, we get the total time complexity:
+    ///T(V,E) = O((V + E) log V)
+    ///if vents exist the worst time complexity we can get is
+    ///T(V,E) = O((V + E + k^2) log V)
 }
