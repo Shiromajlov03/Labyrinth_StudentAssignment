@@ -35,6 +35,78 @@ public static class PathfindingAlgorithm
 
 
     /// <summary>
+    /// Min-heap implementation for efficient priority queue operations
+    /// </summary>
+    private class MinHeap
+    {
+        private readonly List<(Vector2Int pos, float cost)> heap = new List<(Vector2Int, float)>();
+
+        public int Count => heap.Count;
+
+        public void Enqueue(Vector2Int position, float cost)
+        {
+            heap.Add((position, cost));
+            HeapifyUp(heap.Count - 1);
+        }
+
+        public (Vector2Int pos, float cost) Dequeue()
+        {
+            if (heap.Count == 0)
+                throw new InvalidOperationException("Heap is empty");
+
+            var result = heap[0];
+            heap[0] = heap[heap.Count - 1];
+            heap.RemoveAt(heap.Count - 1);
+
+            if (heap.Count > 0)
+                HeapifyDown(0);
+
+            return result;
+        }
+
+        private void HeapifyUp(int index)
+        {
+            while (index > 0)
+            {
+                int parent = (index - 1) / 2;
+                if (heap[parent].cost <= heap[index].cost)
+                    break;
+
+                Swap(index, parent);
+                index = parent;
+            }
+        }
+
+        private void HeapifyDown(int index)
+        {
+            int last = heap.Count - 1;
+            while (true)
+            {
+                int left = 2 * index + 1;
+                int right = 2 * index + 2;
+                int smallest = index;
+
+                if (left <= last && heap[left].cost < heap[smallest].cost)
+                    smallest = left;
+                if (right <= last && heap[right].cost < heap[smallest].cost)
+                    smallest = right;
+
+                if (smallest == index) break;
+
+                Swap(index, smallest);
+                index = smallest;
+            }
+        }
+
+        private void Swap(int i, int j)
+        {
+            var temp = heap[i];
+            heap[i] = heap[j];
+            heap[j] = temp;
+        }
+    }
+
+    /// <summary>
     /// Finds the shortest path from <paramref name="start"/> to <paramref name="goal"/> using Dijkstra's algorithm.
     /// Handles walls with varying costs and vents (teleportation points).
     /// </summary>
@@ -47,27 +119,25 @@ public static class PathfindingAlgorithm
         if (start == goal)
             return new List<Vector2Int> { start };
 
-        // Priority queue using a sorted set for efficient min-cost retrieval
-        var comparer = Comparer<(float cost, Vector2Int pos)>.Create((a, b) =>
-        {
-            int cmp = a.cost.CompareTo(b.cost);
-            if (cmp == 0) cmp = a.pos.x.CompareTo(b.pos.x);
-            if (cmp == 0) cmp = a.pos.y.CompareTo(b.pos.y);
-            return cmp;
-        });
-        var priorityQueue = new SortedSet<(float cost, Vector2Int pos)>(comparer);
-        priorityQueue.Add((0f, start));
+        // Use min-heap for efficient priority queue operations
+        var priorityQueue = new MinHeap();
+        priorityQueue.Enqueue(start, 0f);
 
         var costSoFar = new Dictionary<Vector2Int, float> { [start] = 0f };
         var previous = new Dictionary<Vector2Int, Vector2Int>();
+        var visited = new HashSet<Vector2Int>(); // For lazy deletion
 
         Vector2Int[] directions = new Vector2Int[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
 
         while (priorityQueue.Count > 0)
         {
-            var currentTuple = priorityQueue.Min;
-            priorityQueue.Remove(currentTuple);
-            var current = currentTuple.pos;
+            var (current, currentCost) = priorityQueue.Dequeue();
+
+            // Lazy deletion: skip if already processed with better cost
+            if (visited.Contains(current))
+                continue;
+
+            visited.Add(current);
 
             if (current == goal)
                 return ReconstructPath(previous, start, goal);
@@ -86,12 +156,9 @@ public static class PathfindingAlgorithm
                 float newCost = costSoFar[current] + moveCost;
                 if (!costSoFar.ContainsKey(neighbor) || newCost < costSoFar[neighbor])
                 {
-                    if (costSoFar.ContainsKey(neighbor))
-                        priorityQueue.Remove((costSoFar[neighbor], neighbor));
-
                     costSoFar[neighbor] = newCost;
                     previous[neighbor] = current;
-                    priorityQueue.Add((newCost, neighbor));
+                    priorityQueue.Enqueue(neighbor, newCost);
                 }
             }
 
@@ -104,12 +171,9 @@ public static class PathfindingAlgorithm
                     float newCost = costSoFar[current] + ventCost;
                     if (!costSoFar.ContainsKey(otherVent) || newCost < costSoFar[otherVent])
                     {
-                        if (costSoFar.ContainsKey(otherVent))
-                            priorityQueue.Remove((costSoFar[otherVent], otherVent));
-
                         costSoFar[otherVent] = newCost;
                         previous[otherVent] = current;
-                        priorityQueue.Add((newCost, otherVent));
+                        priorityQueue.Enqueue(otherVent, newCost);
                     }
                 }
             }
@@ -183,16 +247,4 @@ public static class PathfindingAlgorithm
         return float.IsInfinity(GetMovementCost(from, to, mapData));
     }
 
-    /// <time complexity calculation>
-    /// definition off indata
-    /// V = amount off nodes in the labyrinth because the labyrinth is a grid with width and height a node = V = Width * Height
-    /// E = amount off edges between nodes. Each node can have up to 4 edges to other nodes (up, down, left, right), so in a grid without walls we have aproximately E =< 4V
-    /// walls reduce the number of edges while vents can increase it. if there are k vents, they can contribute up to O(k^2) additional edges between vents
-    /// therefore the time complexity becomes
-    /// Each node is removed from the priority queue at most once, and for each node its edges are examined.
-    ///The number of neighbor operations is proportional to the number of edges 
-    ///Thus, we get the total time complexity:
-    ///T(V,E) = O((V + E) log V)
-    ///if vents exist the worst time complexity we can get is
-    ///T(V,E) = O((V + E + k^2) log V)
 }
